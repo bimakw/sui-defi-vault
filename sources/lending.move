@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024 Bima Kharisma Wicaksana
+ * Copyright (c) 2025 Bima Kharisma Wicaksana
  * GitHub: https://github.com/bimakw
  *
  * Licensed under MIT License with Attribution Requirement.
@@ -207,6 +207,7 @@ module sui_defi_vault::lending {
         pool.total_borrowed = pool.total_borrowed - position.borrowed_amount;
 
         // Return collateral
+        let borrowed_amt = position.borrowed_amount;
         let LoanPosition {
             id,
             pool_id: _,
@@ -231,7 +232,7 @@ module sui_defi_vault::lending {
 
         event::emit(Repay {
             borrower: repayer,
-            amount: position.borrowed_amount,
+            amount: borrowed_amt,
             interest_paid: interest,
         });
     }

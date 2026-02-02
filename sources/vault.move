@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024 Bima Kharisma Wicaksana
+ * Copyright (c) 2025 Bima Kharisma Wicaksana
  * GitHub: https://github.com/bimakw
  *
  * Licensed under MIT License with Attribution Requirement.
@@ -123,7 +123,7 @@ module sui_defi_vault::vault {
             total_shares: vault.total_shares,
         });
 
-        transfer::transfer(share_token, depositor);
+        transfer::public_transfer(share_token, depositor);
     }
 
     /// Withdraw SUI by burning shares
@@ -205,7 +205,7 @@ module sui_defi_vault::vault {
         share_token: VaultShare,
         recipient: address
     ) {
-        transfer::transfer(share_token, recipient);
+        transfer::public_transfer(share_token, recipient);
     }
 
     /// Merge two share tokens
