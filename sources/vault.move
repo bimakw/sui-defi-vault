@@ -1,13 +1,3 @@
-/*
- * Copyright (c) 2025 Bima Kharisma Wicaksana
- * GitHub: https://github.com/bimakw
- *
- * Licensed under MIT License with Attribution Requirement.
- * See LICENSE file for details.
- */
-
-/// Vault Module - A simple DeFi vault for SUI deposits with share-based accounting.
-/// Demonstrates ERC-4626 equivalent pattern on Sui.
 module sui_defi_vault::vault {
     use sui::object::{Self, UID};
     use sui::tx_context::{Self, TxContext};
@@ -17,13 +7,11 @@ module sui_defi_vault::vault {
     use sui::balance::{Self, Balance};
     use sui::event;
 
-    /// Error codes
     const EInsufficientShares: u64 = 0;
     const EInsufficientDeposit: u64 = 1;
     const EVaultEmpty: u64 = 2;
     const EZeroAmount: u64 = 3;
 
-    /// Vault holding deposited SUI
     public struct Vault has key {
         id: UID,
         balance: Balance<SUI>,
@@ -31,7 +19,6 @@ module sui_defi_vault::vault {
         min_deposit: u64,
     }
 
-    /// Share token representing ownership in vault
     public struct VaultShare has key, store {
         id: UID,
         vault_id: address,
@@ -39,7 +26,6 @@ module sui_defi_vault::vault {
         owner: address,
     }
 
-    /// Events
     public struct Deposited has copy, drop {
         depositor: address,
         amount: u64,
@@ -54,7 +40,6 @@ module sui_defi_vault::vault {
         total_shares: u64,
     }
 
-    /// Initialize vault
     fun init(ctx: &mut TxContext) {
         let vault = Vault {
             id: object::new(ctx),
@@ -66,7 +51,6 @@ module sui_defi_vault::vault {
         transfer::share_object(vault);
     }
 
-    /// Calculate shares for deposit amount
     public fun calculate_shares(vault: &Vault, amount: u64): u64 {
         let total_balance = balance::value(&vault.balance);
 
@@ -79,7 +63,6 @@ module sui_defi_vault::vault {
         }
     }
 
-    /// Calculate withdrawal amount for shares
     public fun calculate_withdrawal(vault: &Vault, shares: u64): u64 {
         let total_balance = balance::value(&vault.balance);
 
@@ -90,7 +73,6 @@ module sui_defi_vault::vault {
         }
     }
 
-    /// Deposit SUI and receive shares
     public entry fun deposit(
         vault: &mut Vault,
         payment: Coin<SUI>,
@@ -104,11 +86,9 @@ module sui_defi_vault::vault {
         let shares = calculate_shares(vault, amount);
         assert!(shares > 0, EZeroAmount);
 
-        // Add to vault balance
         balance::join(&mut vault.balance, coin::into_balance(payment));
         vault.total_shares = vault.total_shares + shares;
 
-        // Create share token
         let share_token = VaultShare {
             id: object::new(ctx),
             vault_id: object::uid_to_address(&vault.id),
@@ -126,7 +106,6 @@ module sui_defi_vault::vault {
         transfer::public_transfer(share_token, depositor);
     }
 
-    /// Withdraw SUI by burning shares
     public entry fun withdraw(
         vault: &mut Vault,
         share_token: VaultShare,
@@ -141,14 +120,11 @@ module sui_defi_vault::vault {
         let withdrawal_amount = calculate_withdrawal(vault, shares);
         assert!(withdrawal_amount > 0, EVaultEmpty);
 
-        // Update vault state
         vault.total_shares = vault.total_shares - shares;
 
-        // Burn share token
         let VaultShare { id, vault_id: _, shares: _, owner: _ } = share_token;
         object::delete(id);
 
-        // Transfer SUI to withdrawer
         let withdrawn_coin = coin::from_balance(
             balance::split(&mut vault.balance, withdrawal_amount),
             ctx
@@ -164,7 +140,6 @@ module sui_defi_vault::vault {
         transfer::public_transfer(withdrawn_coin, withdrawer);
     }
 
-    /// Partial withdrawal
     public entry fun withdraw_partial(
         vault: &mut Vault,
         share_token: &mut VaultShare,
@@ -180,11 +155,9 @@ module sui_defi_vault::vault {
         let withdrawal_amount = calculate_withdrawal(vault, shares_to_withdraw);
         assert!(withdrawal_amount > 0, EVaultEmpty);
 
-        // Update states
         vault.total_shares = vault.total_shares - shares_to_withdraw;
         share_token.shares = share_token.shares - shares_to_withdraw;
 
-        // Transfer SUI to withdrawer
         let withdrawn_coin = coin::from_balance(
             balance::split(&mut vault.balance, withdrawal_amount),
             ctx
@@ -200,7 +173,6 @@ module sui_defi_vault::vault {
         transfer::public_transfer(withdrawn_coin, withdrawer);
     }
 
-    /// Transfer shares to another address
     public entry fun transfer_shares(
         share_token: VaultShare,
         recipient: address
@@ -208,7 +180,6 @@ module sui_defi_vault::vault {
         transfer::public_transfer(share_token, recipient);
     }
 
-    /// Merge two share tokens
     public entry fun merge_shares(
         share1: &mut VaultShare,
         share2: VaultShare
@@ -221,7 +192,6 @@ module sui_defi_vault::vault {
         object::delete(id);
     }
 
-    /// View functions
     public fun vault_balance(vault: &Vault): u64 {
         balance::value(&vault.balance)
     }

@@ -1,13 +1,3 @@
-/*
- * Copyright (c) 2025 Bima Kharisma Wicaksana
- * GitHub: https://github.com/bimakw
- *
- * Licensed under MIT License with Attribution Requirement.
- * See LICENSE file for details.
- */
-
-/// Staking Module - Time-based staking with reward distribution.
-/// Demonstrates staking mechanics with lock periods and APY calculation.
 module sui_defi_vault::staking {
     use sui::object::{Self, UID, ID};
     use sui::tx_context::{Self, TxContext};
@@ -17,16 +7,13 @@ module sui_defi_vault::staking {
     use sui::clock::{Self, Clock};
     use sui::event;
 
-    /// Error codes
     const EStillLocked: u64 = 0;
     const EInvalidAmount: u64 = 1;
     const EPoolEmpty: u64 = 2;
     const ENoRewards: u64 = 3;
 
-    /// Reward token one-time-witness
     public struct STAKING has drop {}
 
-    /// Staking pool configuration
     public struct StakingPool<phantom StakeToken> has key {
         id: UID,
         staked_balance: Balance<StakeToken>,
@@ -38,7 +25,6 @@ module sui_defi_vault::staking {
         lock_period_ms: u64,
     }
 
-    /// Individual stake position
     public struct StakePosition<phantom StakeToken> has key, store {
         id: UID,
         pool_id: ID,
@@ -49,7 +35,6 @@ module sui_defi_vault::staking {
         unlock_time: u64,
     }
 
-    /// Events
     public struct Staked has copy, drop {
         user: address,
         amount: u64,
@@ -67,7 +52,6 @@ module sui_defi_vault::staking {
         rewards: u64,
     }
 
-    /// Initialize staking reward token
     fun init(witness: STAKING, ctx: &mut TxContext) {
         let (treasury_cap, metadata) = coin::create_currency(
             witness,
@@ -83,7 +67,6 @@ module sui_defi_vault::staking {
         transfer::public_transfer(treasury_cap, tx_context::sender(ctx));
     }
 
-    /// Create a new staking pool
     public entry fun create_pool<StakeToken>(
         reward_per_second: u64,
         lock_period_ms: u64,
@@ -104,7 +87,6 @@ module sui_defi_vault::staking {
         transfer::share_object(pool);
     }
 
-    /// Fund the reward pool
     public entry fun fund_rewards<StakeToken>(
         pool: &mut StakingPool<StakeToken>,
         rewards: Coin<STAKING>
@@ -112,7 +94,6 @@ module sui_defi_vault::staking {
         balance::join(&mut pool.reward_balance, coin::into_balance(rewards));
     }
 
-    /// Update reward accumulator
     fun update_rewards<StakeToken>(
         pool: &mut StakingPool<StakeToken>,
         clock: &Clock
@@ -136,7 +117,6 @@ module sui_defi_vault::staking {
         pool.last_update_time = current_time;
     }
 
-    /// Calculate pending rewards for a position
     public fun pending_rewards<StakeToken>(
         pool: &StakingPool<StakeToken>,
         position: &StakePosition<StakeToken>,
@@ -162,7 +142,6 @@ module sui_defi_vault::staking {
         }
     }
 
-    /// Stake tokens
     public entry fun stake<StakeToken>(
         pool: &mut StakingPool<StakeToken>,
         stake_coin: Coin<StakeToken>,
@@ -174,20 +153,16 @@ module sui_defi_vault::staking {
 
         assert!(amount > 0, EInvalidAmount);
 
-        // Update rewards before state change
         update_rewards(pool, clock);
 
         let current_time = clock::timestamp_ms(clock);
         let unlock_time = current_time + pool.lock_period_ms;
 
-        // Add to pool
         balance::join(&mut pool.staked_balance, coin::into_balance(stake_coin));
         pool.total_staked = pool.total_staked + amount;
 
-        // Calculate initial reward debt
         let reward_debt = (amount * pool.accumulated_reward_per_share) / 1_000_000_000_000_000_000;
 
-        // Create position
         let position = StakePosition<StakeToken> {
             id: object::new(ctx),
             pool_id: object::id(pool),
@@ -207,7 +182,6 @@ module sui_defi_vault::staking {
         transfer::transfer(position, staker);
     }
 
-    /// Claim rewards without unstaking
     public entry fun claim_rewards<StakeToken>(
         pool: &mut StakingPool<StakeToken>,
         position: &mut StakePosition<StakeToken>,
@@ -239,7 +213,6 @@ module sui_defi_vault::staking {
         transfer::public_transfer(reward_coin, claimer);
     }
 
-    /// Unstake and claim rewards
     public entry fun unstake<StakeToken>(
         pool: &mut StakingPool<StakeToken>,
         position: StakePosition<StakeToken>,
@@ -262,17 +235,14 @@ module sui_defi_vault::staking {
 
         let amount = position.amount;
 
-        // Update pool state
         pool.total_staked = pool.total_staked - amount;
 
-        // Return staked tokens
         let staked_coin = coin::from_balance(
             balance::split(&mut pool.staked_balance, amount),
             ctx
         );
         transfer::public_transfer(staked_coin, unstaker);
 
-        // Transfer rewards if any
         if (rewards > 0 && balance::value(&pool.reward_balance) >= rewards) {
             let reward_coin = coin::from_balance(
                 balance::split(&mut pool.reward_balance, rewards),
@@ -281,7 +251,6 @@ module sui_defi_vault::staking {
             transfer::public_transfer(reward_coin, unstaker);
         };
 
-        // Destroy position
         let StakePosition {
             id,
             pool_id: _,
@@ -300,7 +269,6 @@ module sui_defi_vault::staking {
         });
     }
 
-    /// View functions
     public fun get_staked_amount<StakeToken>(position: &StakePosition<StakeToken>): u64 {
         position.amount
     }

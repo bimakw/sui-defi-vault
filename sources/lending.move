@@ -1,13 +1,3 @@
-/*
- * Copyright (c) 2025 Bima Kharisma Wicaksana
- * GitHub: https://github.com/bimakw
- *
- * Licensed under MIT License with Attribution Requirement.
- * See LICENSE file for details.
- */
-
-/// Lending Module - Simple collateralized lending protocol.
-/// Demonstrates lending/borrowing mechanics with liquidation.
 module sui_defi_vault::lending {
     use sui::object::{Self, UID, ID};
     use sui::tx_context::{Self, TxContext};
@@ -18,7 +8,6 @@ module sui_defi_vault::lending {
     use sui::clock::{Self, Clock};
     use sui::event;
 
-    /// Error codes
     const EInsufficientCollateral: u64 = 0;
     const EExceedsMaxBorrow: u64 = 1;
     const ENoActiveLoan: u64 = 2;
@@ -37,7 +26,6 @@ module sui_defi_vault::lending {
     /// Seconds per year
     const SECONDS_PER_YEAR: u64 = 31536000;
 
-    /// Lending pool for SUI
     public struct LendingPool has key {
         id: UID,
         available_liquidity: Balance<SUI>,
@@ -45,7 +33,6 @@ module sui_defi_vault::lending {
         total_deposits: u64,
     }
 
-    /// Individual loan position
     public struct LoanPosition has key, store {
         id: UID,
         pool_id: ID,
@@ -56,7 +43,6 @@ module sui_defi_vault::lending {
         last_update_time: u64,
     }
 
-    /// Events
     public struct Deposit has copy, drop {
         depositor: address,
         amount: u64,
@@ -81,7 +67,6 @@ module sui_defi_vault::lending {
         collateral_seized: u64,
     }
 
-    /// Initialize lending pool
     fun init(ctx: &mut TxContext) {
         let pool = LendingPool {
             id: object::new(ctx),
@@ -93,7 +78,6 @@ module sui_defi_vault::lending {
         transfer::share_object(pool);
     }
 
-    /// Calculate accrued interest
     fun calculate_interest(
         borrowed_amount: u64,
         last_update: u64,
@@ -105,7 +89,6 @@ module sui_defi_vault::lending {
         (borrowed_amount * INTEREST_RATE_BPS * time_elapsed) / (10000 * SECONDS_PER_YEAR)
     }
 
-    /// Deposit SUI to lending pool
     public entry fun deposit(
         pool: &mut LendingPool,
         deposit_coin: Coin<SUI>,
@@ -125,7 +108,6 @@ module sui_defi_vault::lending {
         });
     }
 
-    /// Borrow with collateral
     public entry fun borrow(
         pool: &mut LendingPool,
         collateral_coin: Coin<SUI>,
@@ -139,14 +121,11 @@ module sui_defi_vault::lending {
         assert!(collateral_amount > 0, EInsufficientCollateral);
         assert!(borrow_amount > 0, EInvalidAmount);
 
-        // Check collateral factor
         let max_borrow = (collateral_amount * COLLATERAL_FACTOR_BPS) / 10000;
         assert!(borrow_amount <= max_borrow, EExceedsMaxBorrow);
 
-        // Check pool liquidity
         assert!(balance::value(&pool.available_liquidity) >= borrow_amount, EPoolEmpty);
 
-        // Create loan position
         let position = LoanPosition {
             id: object::new(ctx),
             pool_id: object::id(pool),
@@ -157,10 +136,8 @@ module sui_defi_vault::lending {
             last_update_time: clock::timestamp_ms(clock),
         };
 
-        // Update pool state
         pool.total_borrowed = pool.total_borrowed + borrow_amount;
 
-        // Transfer borrowed amount
         let borrowed_coin = coin::from_balance(
             balance::split(&mut pool.available_liquidity, borrow_amount),
             ctx
@@ -176,7 +153,6 @@ module sui_defi_vault::lending {
         transfer::transfer(position, borrower);
     }
 
-    /// Repay loan and get back collateral
     public entry fun repay(
         pool: &mut LendingPool,
         position: LoanPosition,
@@ -187,7 +163,6 @@ module sui_defi_vault::lending {
         let repayer = tx_context::sender(ctx);
         let current_time = clock::timestamp_ms(clock);
 
-        // Calculate total debt with interest
         let interest = calculate_interest(
             position.borrowed_amount,
             position.last_update_time,
@@ -199,14 +174,11 @@ module sui_defi_vault::lending {
 
         assert!(repayment_amount >= total_debt, EInvalidAmount);
 
-        // Take only what's needed
         let debt_coin = coin::split(&mut repayment, total_debt, ctx);
         balance::join(&mut pool.available_liquidity, coin::into_balance(debt_coin));
 
-        // Update pool state
         pool.total_borrowed = pool.total_borrowed - position.borrowed_amount;
 
-        // Return collateral
         let borrowed_amt = position.borrowed_amount;
         let LoanPosition {
             id,
@@ -221,7 +193,6 @@ module sui_defi_vault::lending {
         let collateral_coin = coin::from_balance(collateral, ctx);
         transfer::public_transfer(collateral_coin, repayer);
 
-        // Return excess payment
         if (coin::value(&repayment) > 0) {
             transfer::public_transfer(repayment, repayer);
         } else {
@@ -237,7 +208,6 @@ module sui_defi_vault::lending {
         });
     }
 
-    /// Liquidate undercollateralized position
     public entry fun liquidate(
         pool: &mut LendingPool,
         position: LoanPosition,
@@ -248,7 +218,6 @@ module sui_defi_vault::lending {
         let liquidator = tx_context::sender(ctx);
         let current_time = clock::timestamp_ms(clock);
 
-        // Calculate total debt
         let interest = calculate_interest(
             position.borrowed_amount,
             position.last_update_time,
@@ -258,11 +227,9 @@ module sui_defi_vault::lending {
         let total_debt = position.borrowed_amount + interest;
         let collateral_value = balance::value(&position.collateral);
 
-        // Check if position is liquidatable
         let liquidation_threshold = (collateral_value * LIQUIDATION_THRESHOLD_BPS) / 10000;
         assert!(total_debt > liquidation_threshold, ENotLiquidatable);
 
-        // Calculate collateral to seize (with bonus)
         let collateral_to_seize = (total_debt * (10000 + LIQUIDATION_BONUS_BPS)) / 10000;
         let actual_seize = if (collateral_to_seize > collateral_value) {
             collateral_value
@@ -270,14 +237,11 @@ module sui_defi_vault::lending {
             collateral_to_seize
         };
 
-        // Repay debt
         let debt_coin = coin::split(&mut repayment, total_debt, ctx);
         balance::join(&mut pool.available_liquidity, coin::into_balance(debt_coin));
 
-        // Update pool state
         pool.total_borrowed = pool.total_borrowed - position.borrowed_amount;
 
-        // Extract position
         let LoanPosition {
             id,
             pool_id: _,
@@ -288,14 +252,12 @@ module sui_defi_vault::lending {
             last_update_time: _,
         } = position;
 
-        // Transfer seized collateral to liquidator
         let seized_coin = coin::from_balance(
             balance::split(&mut collateral, actual_seize),
             ctx
         );
         transfer::public_transfer(seized_coin, liquidator);
 
-        // Return remaining collateral to borrower (if any)
         let remaining = balance::value(&collateral);
         if (remaining > 0) {
             let remaining_coin = coin::from_balance(collateral, ctx);
@@ -304,7 +266,6 @@ module sui_defi_vault::lending {
             balance::destroy_zero(collateral);
         };
 
-        // Return excess payment
         if (coin::value(&repayment) > 0) {
             transfer::public_transfer(repayment, liquidator);
         } else {
@@ -321,7 +282,6 @@ module sui_defi_vault::lending {
         });
     }
 
-    /// View functions
     public fun get_total_debt(position: &LoanPosition, clock: &Clock): u64 {
         let current_time = clock::timestamp_ms(clock);
         let interest = calculate_interest(
